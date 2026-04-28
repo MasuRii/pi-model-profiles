@@ -1,0 +1,66 @@
+{
+  "name": "pi-model-profiles",
+  "version": "0.2.0",
+  "private": false,
+  "description": "Pi extension for saving, importing, and applying agent model frontmatter profiles.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "config/config.example.json",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npx --yes -p typescript@5.9.2 tsc -p tsconfig.json",
+    "lint": "npm run build",
+    "test:clean": "node -e \"require('node:fs').rmSync('.test-dist', { recursive: true, force: true })\"",
+    "prepublishOnly": "npm run test",
+    "pretest": "npm run test:clean",
+    "test": "npx --yes -p typescript@5.9.2 tsc --strict --skipLibCheck --module nodenext --moduleResolution nodenext --target ES2022 --outDir .test-dist src/types-shims.d.ts src/errors.ts src/types.ts src/constants.ts src/atomic-write.ts src/profile-fields.ts src/frontmatter-parser.ts src/profile-store.ts src/agent-writer.ts src/import-service.ts test/frontmatter-parser.test.ts test/import-service.test.ts test/agent-writer.test.ts test/profile-store.test.ts && node --test .test-dist/test/frontmatter-parser.test.js .test-dist/test/import-service.test.js .test-dist/test/agent-writer.test.js .test-dist/test/profile-store.test.js",
+    "posttest": "npm run test:clean",
+    "check": "npm run build && npm run test",
+    "package:dry-run": "npm pack --dry-run"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "coding-agent",
+    "model-profiles",
+    "frontmatter",
+    "agent-configuration",
+    "profiles"
+  ],
+  "author": "MasuRii",
+  "license": "MIT",
+  "homepage": "https://github.com/MasuRii/pi-model-profiles#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MasuRii/pi-model-profiles.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MasuRii/pi-model-profiles/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.70.5",
+    "@mariozechner/pi-tui": "^0.70.5"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

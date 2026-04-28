@@ -1,0 +1,12 @@
+node_modules
+.test-dist
+test
+config.json
+profiles.json
+debug
+.git
+.gitignore
+.npmignore
+tsconfig.json
+package-lock.json
+*.log

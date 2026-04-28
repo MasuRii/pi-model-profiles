@@ -1,0 +1,7 @@
+node_modules/
+dist/
+discovered-tools-cache.json
+profiles.json
+config.json
+debug/
+.test-dist/

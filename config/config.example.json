@@ -1,0 +1,10 @@
+{
+  "debug": false,
+  "profiles": {
+    "autoSave": true,
+    "maxProfiles": 100
+  },
+  "sorting": {
+    "defaultSort": "date-desc"
+  }
+}
