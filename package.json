@@ -1,6 +1,6 @@
 {
   "name": "pi-model-profiles",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "description": "Pi extension for saving, importing, and applying agent model frontmatter profiles.",
   "type": "module",
@@ -57,8 +57,8 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.70.5",
-    "@mariozechner/pi-tui": "^0.70.5"
+    "@mariozechner/pi-coding-agent": "^0.70.6",
+    "@mariozechner/pi-tui": "^0.70.6"
   },
   "publishConfig": {
     "access": "public"

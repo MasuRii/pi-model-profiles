@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes.
 
+## [0.3.0] - 2026-04-30
+
+### Changed
+- Refined the model profiles modal layout with wider sizing, a single bordered grid, and clearer model table columns.
+- Updated the public README screenshot and usage details.
+- Bumped Pi peer dependency ranges to `^0.70.6`.
+
 ## [0.2.0] - 2026-04-26
 
 ### Added
@@ -18,7 +25,7 @@ No unreleased changes.
 
 ### Fixed
 - Confirmation prompts now accept typed input before update or removal actions run.
-- Sort menu keyboard handling now works regardless of focused pane and closes without exiting the modal.
+- Sort menu keyboard handling now works consistently and closes without exiting the modal.
 - Profile update and removal command handlers now avoid duplicate scans and duplicate removal events.
 
 ## [0.1.0] - 2026-04-25
