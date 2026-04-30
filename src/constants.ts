@@ -77,21 +77,21 @@ export function calculateModalHeight(agentCount: number): number {
 /**
  * Minimum modal width in columns
  */
-export const MODAL_MIN_WIDTH = 80;
+export const MODAL_MIN_WIDTH = 100;
 
 /**
  * Maximum modal width in columns
  */
-export const MODAL_MAX_WIDTH = 140;
+export const MODAL_MAX_WIDTH = 160;
 
 /**
  * Base width for modal (borders, padding, labels)
  */
-export const MODAL_BASE_WIDTH = 80;
+export const MODAL_BASE_WIDTH = 100;
 
 /**
  * Calculate dynamic modal width based on content.
- * Formula: base width (80) + maxAgentNameLength clamped to min 80, max 140
+ * Formula: base width (100) + maxAgentNameLength clamped to min 100, max 160
  */
 export function calculateModalWidth(maxAgentNameLength: number): number {
 	const calculatedWidth = MODAL_BASE_WIDTH + maxAgentNameLength;

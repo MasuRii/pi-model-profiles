@@ -5,7 +5,7 @@ import { MODAL_MIN_HEIGHT, calculateModalHeight, resolveModalOverlayOptions } fr
 import { toErrorMessage } from "./errors.js";
 import { loadModalTheme, BOX, type ResolvedModalTheme } from "./modal-theme.js";
 import { formatProfileFieldValue } from "./profile-fields.js";
-import { getAvailableSortOrders, getCurrentSortOrder, getSortOrderLabel, persistSortOrder, sortProfiles } from "./profile-sort-service.js";
+import { getAvailableSortOrders, getCurrentSortOrder, persistSortOrder, sortProfiles } from "./profile-sort-service.js";
 import type { AppliedProfileOutcome, ProfileSortOrder, ProfilesFile, SavedProfile, SavedProfileAgent } from "./types.js";
 
 interface ThemeLike {
@@ -46,7 +46,6 @@ export type ProfileModalResult =
 			outcome: AppliedProfileOutcome;
 	  };
 
-type FocusedPane = "snapshots" | "details";
 type ConfirmationAction = "remove" | "update";
 
 interface ConfirmationState {
@@ -74,8 +73,6 @@ interface TableColumnLayout {
 }
 
 const MODAL_FALLBACK_VIEWPORT = 10;
-const OUTER_HORIZONTAL_PADDING = 1;
-const PANE_GAP = 1;
 const SNAPSHOT_TITLE = "SNAPSHOTS";
 const DETAILS_TITLE = "DETAILS";
 const ACTIVE_PANE_LABEL = "[ACTIVE]";
@@ -141,13 +138,14 @@ function centerLineInWidth(text: string, width: number): string {
 	return fitLineToWidth(`${" ".repeat(padding)}${clipped}`, safeWidth);
 }
 
-function splitPaneWidths(totalWidth: number, snapshotNameWidth: number): { left: number; right: number } {
-	const safeWidth = Math.max(56, totalWidth);
-	const preferredLeft = clamp(snapshotNameWidth + 6, 24, 32);
-	const minLeft = Math.max(22, Math.min(26, safeWidth - 46));
-	const maxLeft = Math.max(minLeft, Math.min(34, safeWidth - 40));
+function splitGridCellWidths(innerWidth: number, snapshotNameWidth: number): { left: number; right: number } {
+	const safeWidth = Math.max(3, innerWidth);
+	const minRight = Math.min(24, Math.max(1, safeWidth - 25));
+	const maxLeft = Math.max(1, safeWidth - minRight - 1);
+	const minLeft = Math.min(maxLeft, Math.max(1, Math.min(28, Math.floor(safeWidth * 0.35))));
+	const preferredLeft = clamp(snapshotNameWidth + 6, 28, 32);
 	const left = clamp(preferredLeft, minLeft, maxLeft);
-	const right = Math.max(36, safeWidth - left);
+	const right = Math.max(1, safeWidth - left - 1);
 	return { left, right };
 }
 
@@ -194,48 +192,68 @@ function wrapText(text: string, width: number): string[] {
 	return lines.length > 0 ? lines : [""];
 }
 
-function renderOuterFrame(lines: string[], width: number, title: string, theme: ResolvedModalTheme): string[] {
-	const frameWidth = Math.max(4, Math.floor(width));
-	const innerWidth = Math.max(1, frameWidth - 2);
-	const colorBorder = (text: string): string => theme.color("accent", text);
-	const safeTitle = truncateToWidth(title, innerWidth, "…", true);
-	const titleWidth = innerWidth >= visibleWidth(safeTitle) + 2 ? visibleWidth(safeTitle) + 2 : visibleWidth(safeTitle);
-	const paddedTitle = innerWidth >= visibleWidth(safeTitle) + 2 ? ` ${theme.bold(safeTitle)} ` : theme.bold(safeTitle);
-	const fillWidth = Math.max(0, innerWidth - titleWidth);
-	const topLine = `${colorBorder(BOX.CORNER_TL)}${colorBorder(paddedTitle)}${colorBorder(BOX.H_LINE.repeat(fillWidth))}${colorBorder(BOX.CORNER_TR)}`;
-	const bottomLine = `${colorBorder(BOX.CORNER_BL)}${colorBorder(BOX.H_LINE.repeat(innerWidth))}${colorBorder(BOX.CORNER_BR)}`;
-	const contentLines = (lines.length > 0 ? lines : [""]).map((line) => {
-		const padded = fitText(line, innerWidth);
-		return `${colorBorder(BOX.V_LINE)}${padded}${colorBorder(BOX.V_LINE)}`;
-	});
-
-	return [topLine, ...contentLines, bottomLine];
+function colorFrameBorder(theme: ResolvedModalTheme, text: string): string {
+	return theme.color("accent", text);
 }
 
-function colorPaneBorder(theme: ResolvedModalTheme, active: boolean, text: string): string {
-	return theme.color(active ? "accent" : "borderMuted", text, { bold: active });
+function buildTopBorder(theme: ResolvedModalTheme, innerWidth: number): string {
+	return colorFrameBorder(theme, `${BOX.CORNER_TL}${BOX.H_LINE.repeat(innerWidth)}${BOX.CORNER_TR}`);
 }
 
-function buildPaneTopBorder(theme: ResolvedModalTheme, width: number, title: string, active: boolean): string {
-	const innerWidth = Math.max(1, width - 2);
-	const label = active ? `${title} ${ACTIVE_PANE_LABEL}` : title;
-	const labelText = truncateToWidth(` ${label} `, innerWidth, "…", true);
-	const fillWidth = Math.max(0, innerWidth - visibleWidth(labelText));
-	return `${colorPaneBorder(theme, active, BOX.CORNER_TL)}${colorPaneBorder(theme, active, labelText)}${colorPaneBorder(theme, active, BOX.H_LINE.repeat(fillWidth))}${colorPaneBorder(theme, active, BOX.CORNER_TR)}`;
+function buildBottomBorder(theme: ResolvedModalTheme, innerWidth: number): string {
+	return colorFrameBorder(theme, `${BOX.CORNER_BL}${BOX.H_LINE.repeat(innerWidth)}${BOX.CORNER_BR}`);
 }
 
-function buildPaneBottomBorder(theme: ResolvedModalTheme, width: number, active: boolean): string {
-	return `${colorPaneBorder(theme, active, BOX.CORNER_BL)}${colorPaneBorder(theme, active, BOX.H_LINE.repeat(width - 2))}${colorPaneBorder(theme, active, BOX.CORNER_BR)}`;
+function buildGridSeparator(theme: ResolvedModalTheme, leftWidth: number, rightWidth: number, join: "┬" | "┼" | "┴"): string {
+	return colorFrameBorder(theme, `${BOX.T_RIGHT}${BOX.H_LINE.repeat(leftWidth)}${join}${BOX.H_LINE.repeat(rightWidth)}${BOX.T_LEFT}`);
 }
 
-function buildPaneLine(theme: ResolvedModalTheme, width: number, content: string, active: boolean): string {
-	const inner = fitText(content, width - 2);
-	return `${colorPaneBorder(theme, active, BOX.V_LINE)}${inner}${colorPaneBorder(theme, active, BOX.V_LINE)}`;
+function buildFullWidthRow(theme: ResolvedModalTheme, innerWidth: number, content: string): string {
+	return `${colorFrameBorder(theme, BOX.V_LINE)}${fitText(content, innerWidth)}${colorFrameBorder(theme, BOX.V_LINE)}`;
+}
+
+function buildGridRow(theme: ResolvedModalTheme, leftWidth: number, rightWidth: number, left: string, right: string): string {
+	return `${colorFrameBorder(theme, BOX.V_LINE)}${fitText(left, leftWidth)}${colorFrameBorder(theme, BOX.V_LINE)}${fitText(right, rightWidth)}${colorFrameBorder(theme, BOX.V_LINE)}`;
+}
+
+function buildModalTitleLine(theme: ResolvedModalTheme, innerWidth: number): string {
+	const title = "  MODEL PROFILES";
+	const close = "[Esc] Close";
+	const gap = " ".repeat(Math.max(1, innerWidth - visibleWidth(title) - visibleWidth(close)));
+	return `${theme.color("accent", title, { bold: true })}${gap}${theme.color("dim", close)}`;
+}
+
+function buildPaneTitleLine(theme: ResolvedModalTheme, title: string, active: boolean, suffix: string | null, width: number): string {
+	const activeLabel = active ? ` ${ACTIVE_PANE_LABEL}` : "";
+	const suffixLabel = suffix ? `: ${suffix}` : "";
+	return theme.color(active ? "accent" : "text", fitText(`  ${title}${activeLabel}${suffixLabel}`, width), { bold: active });
+}
+
+function indentStyledLine(line: string, width: number): string {
+	return fitText(`  ${line}`, width);
 }
 
 function formatDisplayedFieldValue(agent: SavedProfileAgent, key: "model" | "temperature" | "reasoningEffort"): string {
 	const raw = formatProfileFieldValue(key, agent.fields);
 	return raw === "(absent)" ? ABSENT_DISPLAY_VALUE : raw;
+}
+
+function formatTemperatureValue(agent: SavedProfileAgent): string {
+	const value = formatDisplayedFieldValue(agent, "temperature");
+	const numeric = Number(value);
+	if (Number.isFinite(numeric) && Number.isInteger(numeric)) {
+		return String(numeric);
+	}
+	return value;
+}
+
+function formatReasoningValue(agent: SavedProfileAgent): string {
+	const value = formatDisplayedFieldValue(agent, "reasoningEffort");
+	const normalized = value.trim().toLowerCase();
+	if (["extra-high", "extra high", "x-high", "very-high", "very high"].includes(normalized)) {
+		return "xhigh";
+	}
+	return value;
 }
 
 function buildProfileScrollIndicator(offset: number, totalItems: number, visibleItems: number): string {
@@ -267,7 +285,7 @@ function buildAgentScrollIndicator(offset: number, totalItems: number, visibleIt
 }
 
 function renderMetadataLine(theme: ResolvedModalTheme, label: string, value: string, width: number): string {
-	const prefix = `${label.padEnd(8, " ")}`;
+	const prefix = `${label.padEnd(9, " ")}`;
 	const safeValueWidth = Math.max(1, width - visibleWidth(prefix));
 	const valueText = truncateToWidth(value, safeValueWidth, "…", true);
 	const trailing = " ".repeat(Math.max(0, width - visibleWidth(prefix) - visibleWidth(valueText)));
@@ -283,14 +301,11 @@ function computeProfileNameWidth(data: ProfilesFile): number {
 }
 
 function getMaximumContentWidth(data: ProfilesFile): number {
-	let maxWidth = 40;
+	let maxWidth = 8;
 	for (const profile of data.profiles) {
-		maxWidth = Math.max(maxWidth, visibleWidth(profile.name) + 18);
+		maxWidth = Math.max(maxWidth, visibleWidth(profile.name));
 		for (const agent of profile.agents) {
 			maxWidth = Math.max(maxWidth, visibleWidth(agent.agentName));
-			maxWidth = Math.max(maxWidth, visibleWidth(formatDisplayedFieldValue(agent, "model")));
-			maxWidth = Math.max(maxWidth, visibleWidth(formatDisplayedFieldValue(agent, "temperature")));
-			maxWidth = Math.max(maxWidth, visibleWidth(formatDisplayedFieldValue(agent, "reasoningEffort")));
 		}
 	}
 	return maxWidth;
@@ -300,24 +315,18 @@ function buildTableLayout(profile: SavedProfile, totalWidth: number): TableColum
 	const gap = "  ";
 	const gapWidth = visibleWidth(gap) * 3;
 	const available = Math.max(24, totalWidth - gapWidth);
-	const reasoningHeader = totalWidth >= 60 ? "REASONING" : "REASON";
+	const reasoningHeader = "REASONING";
 
 	let agent = Math.max("AGENT".length, ...profile.agents.map((entry) => visibleWidth(entry.agentName)));
-	agent = clamp(agent, 10, 18);
+	agent = clamp(agent, 10, 14);
 
-	const temp = Math.max(
-		6,
-		"TEMP".length,
-		...profile.agents.map((entry) => visibleWidth(formatDisplayedFieldValue(entry, "temperature"))),
-	);
+	let temp = Math.max("TEMPERATURE".length, ...profile.agents.map((entry) => visibleWidth(formatTemperatureValue(entry))));
+	temp = clamp(temp, "TEMPERATURE".length, 14);
 
-	let reasoning = Math.max(
-		reasoningHeader.length,
-		...profile.agents.map((entry) => visibleWidth(formatDisplayedFieldValue(entry, "reasoningEffort"))),
-	);
+	let reasoning = Math.max(reasoningHeader.length, ...profile.agents.map((entry) => visibleWidth(formatReasoningValue(entry))));
 	reasoning = clamp(reasoning, reasoningHeader.length, 12);
 
-	const minimumModel = 16;
+	const minimumModel = 14;
 	let model = available - agent - temp - reasoning;
 
 	while (model < minimumModel && agent > 10) {
@@ -331,7 +340,7 @@ function buildTableLayout(profile: SavedProfile, totalWidth: number): TableColum
 	}
 
 	if (model < minimumModel) {
-		model = Math.max(12, model);
+		model = Math.max(10, model);
 	}
 
 	const totalUsed = agent + model + temp + reasoning;
@@ -354,7 +363,7 @@ function buildTableHeaderLine(theme: ResolvedModalTheme, layout: TableColumnLayo
 		layout.gap,
 		theme.color("accent", fitText("MODEL", layout.model), { bold: true }),
 		layout.gap,
-		theme.color("accent", alignRight("TEMP", layout.temp), { bold: true }),
+		theme.color("accent", alignRight("TEMPERATURE", layout.temp), { bold: true }),
 		layout.gap,
 		theme.color("accent", fitText(layout.reasoningHeader, layout.reasoning), { bold: true }),
 	].join("");
@@ -370,9 +379,9 @@ function buildTableDataLine(theme: ResolvedModalTheme, layout: TableColumnLayout
 		layout.gap,
 		theme.color("text", fitText(formatDisplayedFieldValue(agent, "model"), layout.model)),
 		layout.gap,
-		theme.color("text", alignRight(formatDisplayedFieldValue(agent, "temperature"), layout.temp)),
+		theme.color("text", alignRight(formatTemperatureValue(agent), layout.temp)),
 		layout.gap,
-		theme.color("text", fitText(formatDisplayedFieldValue(agent, "reasoningEffort"), layout.reasoning)),
+		theme.color("text", fitText(formatReasoningValue(agent), layout.reasoning)),
 	].join("");
 }
 
@@ -381,9 +390,7 @@ class ProfileListModal {
 	private selectedProfileId: string | null;
 	private listScrollOffset = 0;
 	private detailScrollOffset = 0;
-	private focusedPane: FocusedPane = "snapshots";
 	private lastPaneContentRows = MODAL_FALLBACK_VIEWPORT;
-	private lastDetailViewportRows = 1;
 	private renameInput: Input | null = null;
 	private renameTargetId: string | null = null;
 	private confirmation: ConfirmationState | null = null;
@@ -415,30 +422,40 @@ class ProfileListModal {
 	}
 
 	render(width: number): string[] {
-		const contentWidth = Math.max(1, Math.floor(width));
-		const paneAreaWidth = Math.max(40, contentWidth - OUTER_HORIZONTAL_PADDING * 2 - PANE_GAP);
-		const paneWidths = splitPaneWidths(paneAreaWidth, computeProfileNameWidth(this.data));
-		const footerLines = this.buildFooterLines(contentWidth);
+		const frameWidth = Math.max(4, Math.floor(width));
+		const innerWidth = Math.max(1, frameWidth - 2);
+		const paneWidths = splitGridCellWidths(innerWidth, computeProfileNameWidth(this.data));
+		const footerLines = this.buildFooterLines(innerWidth);
 		const selectedProfile = this.getSelectedProfile();
 		const agentCount = selectedProfile?.agents.length ?? 0;
 		const paneContentRows = this.resolvePaneContentRows(agentCount, footerLines.length);
 		this.lastPaneContentRows = paneContentRows;
-		const leftPaneLines = this.buildSnapshotPaneBox(paneWidths.left, paneContentRows);
-		const rightPaneLines = this.buildDetailsPaneBox(selectedProfile, paneWidths.right, paneContentRows);
-		const paneRowCount = Math.max(leftPaneLines.length, rightPaneLines.length);
-		const lines: string[] = [];
+		const leftPaneLines = this.buildSnapshotPaneRows(paneWidths.left, paneContentRows);
+		const rightPaneLines = this.buildDetailsPaneRows(selectedProfile, paneWidths.right, paneContentRows);
+		const detailTitle = selectedProfile?.name ?? "No selection";
+		const lines: string[] = [
+			buildTopBorder(this.theme, innerWidth),
+			buildFullWidthRow(this.theme, innerWidth, buildModalTitleLine(this.theme, innerWidth)),
+			buildGridSeparator(this.theme, paneWidths.left, paneWidths.right, "┬"),
+			buildGridRow(
+				this.theme,
+				paneWidths.left,
+				paneWidths.right,
+				buildPaneTitleLine(this.theme, SNAPSHOT_TITLE, true, null, paneWidths.left),
+				buildPaneTitleLine(this.theme, DETAILS_TITLE, false, detailTitle, paneWidths.right),
+			),
+			buildGridSeparator(this.theme, paneWidths.left, paneWidths.right, "┼"),
+		];
 
-		for (let index = 0; index < paneRowCount; index += 1) {
-			const left = leftPaneLines[index] ?? " ".repeat(paneWidths.left);
-			const right = rightPaneLines[index] ?? " ".repeat(paneWidths.right);
-			const content = `${" ".repeat(OUTER_HORIZONTAL_PADDING)}${left}${" ".repeat(PANE_GAP)}${right}${" ".repeat(OUTER_HORIZONTAL_PADDING)}`;
-			lines.push(fitText(content, contentWidth));
+		for (let index = 0; index < paneContentRows; index += 1) {
+			lines.push(buildGridRow(this.theme, paneWidths.left, paneWidths.right, leftPaneLines[index] ?? "", rightPaneLines[index] ?? ""));
 		}
 
-		lines.push(" ".repeat(contentWidth));
+		lines.push(buildGridSeparator(this.theme, paneWidths.left, paneWidths.right, "┴"));
 		for (const footerLine of footerLines) {
-			lines.push(fitText(footerLine, contentWidth));
+			lines.push(buildFullWidthRow(this.theme, innerWidth, footerLine));
 		}
+		lines.push(buildBottomBorder(this.theme, innerWidth));
 
 		return lines;
 	}
@@ -470,21 +487,6 @@ class ProfileListModal {
 			return;
 		}
 
-		if (matchesKey(data, "tab")) {
-			this.toggleFocusedPane();
-			return;
-		}
-
-		if (matchesKey(data, "left")) {
-			this.setFocusedPane("snapshots");
-			return;
-		}
-
-		if (matchesKey(data, "right")) {
-			this.setFocusedPane("details");
-			return;
-		}
-
 		if (matchesKey(data, "r")) {
 			this.startRename();
 			return;
@@ -510,12 +512,7 @@ class ProfileListModal {
 			return;
 		}
 
-		if (this.focusedPane === "snapshots") {
-			this.handleSnapshotPaneInput(data);
-			return;
-		}
-
-		this.handleDetailsPaneInput(data);
+		this.handleSnapshotPaneInput(data);
 	}
 
 	private handleSnapshotPaneInput(data: string): void {
@@ -554,145 +551,92 @@ class ProfileListModal {
 		}
 	}
 
-	private handleDetailsPaneInput(data: string): void {
-		if (matchesKey(data, "up") || matchesKey(data, "k")) {
-			this.scrollDetails(-1);
-			return;
-		}
-
-		if (matchesKey(data, "down") || matchesKey(data, "j")) {
-			this.scrollDetails(1);
-			return;
-		}
-
-		if (matchesKey(data, "pageup")) {
-			this.scrollDetails(-Math.max(1, this.lastDetailViewportRows));
-			return;
-		}
-
-		if (matchesKey(data, "pagedown")) {
-			this.scrollDetails(Math.max(1, this.lastDetailViewportRows));
-			return;
-		}
-
-		if (matchesKey(data, "home")) {
-			this.scrollDetailsToBoundary("start");
-			return;
-		}
-
-		if (matchesKey(data, "end")) {
-			this.scrollDetailsToBoundary("end");
-			return;
-		}
-
-		if (matchesKey(data, "return")) {
-			this.applySelectedProfile();
-		}
-	}
-
-	private buildSnapshotPaneBox(width: number, contentRows: number): string[] {
+	private buildSnapshotPaneRows(width: number, contentRows: number): string[] {
 		const lines: string[] = [];
-		const innerWidth = Math.max(1, width - 2);
 		const profiles = this.getSortedProfiles();
-		const isFocused = this.focusedPane === "snapshots";
 		const needsIndicator = profiles.length > contentRows;
 		const viewportRows = Math.max(1, contentRows - (needsIndicator ? 1 : 0));
 		this.ensureSelectedVisible(viewportRows);
 
-		lines.push(buildPaneTopBorder(this.theme, width, SNAPSHOT_TITLE, isFocused));
-
 		if (profiles.length === 0) {
-			lines.push(buildPaneLine(this.theme, width, this.theme.color("dim", fitText(EMPTY_PROFILE_HINT, innerWidth)), isFocused));
-			for (let index = 1; index < contentRows; index += 1) {
-				lines.push(buildPaneLine(this.theme, width, " ".repeat(innerWidth), isFocused));
+			lines.push(this.theme.color("dim", fitText(`  ${EMPTY_PROFILE_HINT}`, width)));
+			while (lines.length < contentRows) {
+				lines.push(" ".repeat(width));
 			}
-			lines.push(buildPaneBottomBorder(this.theme, width, isFocused));
 			return lines;
 		}
 
 		for (let index = 0; index < viewportRows; index += 1) {
 			const profile = profiles[this.listScrollOffset + index];
 			if (!profile) {
-				lines.push(buildPaneLine(this.theme, width, " ".repeat(innerWidth), isFocused));
+				lines.push(" ".repeat(width));
 				continue;
 			}
 
 			const isSelected = profile.id === this.selectedProfileId;
-			const label = fitText(`${isSelected ? ">" : " "} ${profile.name}`, innerWidth);
+			const label = fitText(` ${isSelected ? ">" : " "} ${profile.name}`, width);
 			if (isSelected) {
-				const content = isFocused
-					? this.theme.color("selectedText", label, { background: "selectedBg", bold: true })
-					: this.theme.color("accent", label, { bold: true });
-				lines.push(buildPaneLine(this.theme, width, content, isFocused));
+				lines.push(this.theme.color("selectedText", label, { background: "selectedBg", bold: true }));
 				continue;
 			}
 
-			lines.push(buildPaneLine(this.theme, width, this.theme.color("text", label), isFocused));
+			lines.push(this.theme.color("text", label));
 		}
 
 		if (needsIndicator) {
-			const indicator = alignRight(buildProfileScrollIndicator(this.listScrollOffset, profiles.length, viewportRows), innerWidth);
-			lines.push(buildPaneLine(this.theme, width, this.theme.color("dim", indicator), isFocused));
+			const indicator = alignRight(buildProfileScrollIndicator(this.listScrollOffset, profiles.length, viewportRows), width);
+			lines.push(this.theme.color("dim", indicator));
 		}
 
-		while (lines.length < contentRows + 1) {
-			lines.push(buildPaneLine(this.theme, width, " ".repeat(innerWidth), isFocused));
+		while (lines.length < contentRows) {
+			lines.push(" ".repeat(width));
 		}
 
-		lines.push(buildPaneBottomBorder(this.theme, width, isFocused));
 		return lines;
 	}
 
-	private buildDetailsPaneBox(profile: SavedProfile | null, width: number, contentRows: number): string[] {
+	private buildDetailsPaneRows(profile: SavedProfile | null, width: number, contentRows: number): string[] {
 		const lines: string[] = [];
-		const innerWidth = Math.max(1, width - 2);
-		const isFocused = this.focusedPane === "details";
-		lines.push(buildPaneTopBorder(this.theme, width, DETAILS_TITLE, isFocused));
 
 		if (!profile) {
-			this.lastDetailViewportRows = 1;
-			lines.push(buildPaneLine(this.theme, width, renderMetadataLine(this.theme, "Name:", "-", innerWidth), isFocused));
-			lines.push(buildPaneLine(this.theme, width, renderMetadataLine(this.theme, "Updated:", "-", innerWidth), isFocused));
-			lines.push(buildPaneLine(this.theme, width, " ".repeat(innerWidth), isFocused));
-			lines.push(buildPaneLine(this.theme, width, this.theme.color("dim", fitText(EMPTY_DETAILS_HINT, innerWidth)), isFocused));
-			while (lines.length < contentRows + 1) {
-				lines.push(buildPaneLine(this.theme, width, " ".repeat(innerWidth), isFocused));
+			lines.push(indentStyledLine(renderMetadataLine(this.theme, "Updated:", "-", Math.max(1, width - 2)), width));
+			lines.push(" ".repeat(width));
+			lines.push(this.theme.color("dim", fitText(`  ${EMPTY_DETAILS_HINT}`, width)));
+			while (lines.length < contentRows) {
+				lines.push(" ".repeat(width));
 			}
-			lines.push(buildPaneBottomBorder(this.theme, width, isFocused));
 			return lines;
 		}
 
-		const fixedRowsBeforeData = 5;
+		const fixedRowsBeforeData = 4;
 		const availableDataArea = Math.max(1, contentRows - fixedRowsBeforeData);
 		const needsIndicator = profile.agents.length > availableDataArea;
 		const viewportRows = Math.max(1, availableDataArea - (needsIndicator ? 1 : 0));
-		this.lastDetailViewportRows = viewportRows;
 		const maxOffset = Math.max(0, profile.agents.length - viewportRows);
 		this.detailScrollOffset = clamp(this.detailScrollOffset, 0, maxOffset);
-		const layout = buildTableLayout(profile, innerWidth);
+		const tableWidth = Math.max(1, width - 4);
+		const layout = buildTableLayout(profile, tableWidth);
 
-		lines.push(buildPaneLine(this.theme, width, renderMetadataLine(this.theme, "Name:", profile.name, innerWidth), isFocused));
-		lines.push(buildPaneLine(this.theme, width, renderMetadataLine(this.theme, "Updated:", formatTimestamp(profile.updatedAt), innerWidth), isFocused));
-		lines.push(buildPaneLine(this.theme, width, " ".repeat(innerWidth), isFocused));
-		lines.push(buildPaneLine(this.theme, width, buildTableHeaderLine(this.theme, layout), isFocused));
-		lines.push(buildPaneLine(this.theme, width, buildTableSeparatorLine(this.theme, innerWidth), isFocused));
+		lines.push(indentStyledLine(renderMetadataLine(this.theme, "Updated:", formatTimestamp(profile.updatedAt), tableWidth), width));
+		lines.push(" ".repeat(width));
+		lines.push(indentStyledLine(buildTableHeaderLine(this.theme, layout), width));
+		lines.push(indentStyledLine(buildTableSeparatorLine(this.theme, tableWidth), width));
 
 		for (let index = 0; index < viewportRows; index += 1) {
 			const agent = profile.agents[this.detailScrollOffset + index];
-			const content = agent ? buildTableDataLine(this.theme, layout, agent) : " ".repeat(innerWidth);
-			lines.push(buildPaneLine(this.theme, width, content, isFocused));
+			const content = agent ? indentStyledLine(buildTableDataLine(this.theme, layout, agent), width) : " ".repeat(width);
+			lines.push(content);
 		}
 
 		if (needsIndicator) {
-			const indicator = centerText(buildAgentScrollIndicator(this.detailScrollOffset, profile.agents.length, viewportRows), innerWidth);
-			lines.push(buildPaneLine(this.theme, width, this.theme.color("dim", indicator), isFocused));
+			const indicator = centerText(buildAgentScrollIndicator(this.detailScrollOffset, profile.agents.length, viewportRows), width);
+			lines.push(this.theme.color("dim", indicator));
 		}
 
-		while (lines.length < contentRows + 1) {
-			lines.push(buildPaneLine(this.theme, width, " ".repeat(innerWidth), isFocused));
+		while (lines.length < contentRows) {
+			lines.push(" ".repeat(width));
 		}
 
-		lines.push(buildPaneBottomBorder(this.theme, width, isFocused));
 		return lines;
 	}
 
@@ -731,26 +675,9 @@ class ProfileListModal {
 			return wrapText(this.message.text, width).map((line) => this.theme.color(slot, fitText(line, width)));
 		}
 
-		const gap = "    ";
-		const leftWidth = Math.max(24, Math.min(34, Math.floor((width - visibleWidth(gap)) * 0.44)));
-		const rightWidth = Math.max(24, width - visibleWidth(gap) - leftWidth);
-		const row = (left: string, right: string, accent = false): string => {
-			const leftText = accent ? this.theme.color("accent", fitText(left, leftWidth), { bold: true }) : this.theme.color("dim", fitText(left, leftWidth));
-			const rightText = accent ? this.theme.color("accent", fitText(right, rightWidth), { bold: true }) : this.theme.color("dim", fitText(right, rightWidth));
-			return `${leftText}${gap}${rightText}`;
-		};
-
-		const sortLabel = getSortOrderLabel(this.currentSortOrder);
-
 		return [
-			row("NAVIGATION", "ACTIONS", true),
-			row("[↑↓]    Select Item", "[Enter] Apply Snapshot"),
-			row("[Tab/→] Switch Pane", "[s]     Save Current"),
-			row("[Esc]   Close Modal", "[r]     Rename Snapshot"),
-			row("", "[Del/Ctrl+D] Delete Snapshot"),
-			row("", "[Ctrl+U] Update Snapshot"),
-			row("", "[Ctrl+S] Sort Profiles"),
-			row("", `[Sort: ${sortLabel}]`),
+			this.theme.color("dim", fitText("  NAVIGATION: [↑↓] Select Item   [Esc] Close Modal", width)),
+			this.theme.color("dim", fitText("  ACTIONS:    [Enter] Apply   [s] Save   [r] Rename   [Del] Delete   [Ctrl+U] Update", width)),
 		];
 	}
 
@@ -767,14 +694,14 @@ class ProfileListModal {
 		const hasTerminalRows =
 			typeof process.stdout.rows === "number" && Number.isFinite(process.stdout.rows) && process.stdout.rows > 0;
 		if (!hasTerminalRows) {
-			return Math.max(MODAL_MIN_HEIGHT - footerRows - 6, MODAL_FALLBACK_VIEWPORT);
+			return Math.max(MODAL_MIN_HEIGHT - footerRows - 7, MODAL_FALLBACK_VIEWPORT);
 		}
 
-		return Math.max(8, calculateModalHeight(agentCount) - footerRows - 6);
+		return Math.max(8, calculateModalHeight(agentCount) - footerRows - 7);
 	}
 
 	private getSnapshotViewportRows(): number {
-		return Math.max(1, this.lastPaneContentRows - 1);
+		return Math.max(1, this.lastPaneContentRows);
 	}
 
 	private ensureSelectedVisible(viewportSize: number): void {
@@ -791,19 +718,6 @@ class ProfileListModal {
 		if (selectedIndex >= this.listScrollOffset + viewportSize) {
 			this.listScrollOffset = selectedIndex - viewportSize + 1;
 		}
-	}
-
-	private setFocusedPane(nextPane: FocusedPane): void {
-		if (this.focusedPane === nextPane) {
-			return;
-		}
-		this.focusedPane = nextPane;
-		this.requestRender();
-	}
-
-	private toggleFocusedPane(): void {
-		this.focusedPane = this.focusedPane === "snapshots" ? "details" : "snapshots";
-		this.requestRender();
 	}
 
 	private moveSelection(delta: number): void {
@@ -830,33 +744,6 @@ class ProfileListModal {
 		this.detailScrollOffset = 0;
 		this.message = null;
 		this.ensureSelectedVisible(this.getSnapshotViewportRows());
-		this.requestRender();
-	}
-
-	private scrollDetails(delta: number): void {
-		const profile = this.getSelectedProfile();
-		if (!profile) {
-			return;
-		}
-
-		const maxOffset = Math.max(0, profile.agents.length - this.lastDetailViewportRows);
-		this.detailScrollOffset = clamp(this.detailScrollOffset + delta, 0, maxOffset);
-		this.requestRender();
-	}
-
-	private scrollDetailsToBoundary(boundary: "start" | "end"): void {
-		const profile = this.getSelectedProfile();
-		if (!profile) {
-			return;
-		}
-
-		if (boundary === "start") {
-			this.detailScrollOffset = 0;
-			this.requestRender();
-			return;
-		}
-
-		this.detailScrollOffset = Math.max(0, profile.agents.length - this.lastDetailViewportRows);
 		this.requestRender();
 	}
 
@@ -1159,7 +1046,7 @@ export async function openProfilesModal(
 
 			return {
 				render(width: number): string[] {
-					return renderOuterFrame(contentInstance.render(Math.max(1, width - 2)), width, "MODEL PROFILES", resolvedTheme);
+					return contentInstance.render(width);
 				},
 				invalidate(): void {
 					contentInstance.invalidate();

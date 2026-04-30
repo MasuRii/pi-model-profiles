@@ -56,7 +56,6 @@ Modal shortcuts:
 | Shortcut | Action |
 |----------|--------|
 | `↑` / `↓` | Move through snapshots |
-| `Tab` / `→` | Switch between snapshots and details panes |
 | `Enter` | Apply selected snapshot |
 | `s` | Save current agent state as a new snapshot |
 | `r` | Rename selected snapshot |
