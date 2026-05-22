@@ -1,4 +1,4 @@
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { CONFIG_PATH, DEBUG_DIR, DEBUG_LOG_PATH, EXTENSION_ROOT } from "./config.js";
 

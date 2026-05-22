@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { COMMAND_NAME, INITIAL_PROFILE_NAME, PROFILE_NAME_SUFFIX, PROFILE_STORE_PATH } from "./constants.js";
 import { applySavedProfile, captureAgentSnapshots, detectActiveAgentName } from "./agent-writer.js";

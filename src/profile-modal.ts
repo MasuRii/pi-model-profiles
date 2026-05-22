@@ -1,5 +1,5 @@
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Input, matchesKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { Input, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { MODAL_MIN_HEIGHT, calculateModalHeight, resolveModalOverlayOptions } from "./constants.js";
 import { toErrorMessage } from "./errors.js";

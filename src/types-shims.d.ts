@@ -44,7 +44,7 @@ declare module "node:test" {
   export default test;
 }
 
-declare module "@mariozechner/pi-coding-agent" {
+declare module "@earendil-works/pi-coding-agent" {
   export interface Theme {
     [key: string]: any;
   }
@@ -75,7 +75,7 @@ declare module "@mariozechner/pi-coding-agent" {
   export function getSettingsListTheme(theme?: Theme): any;
 }
 
-declare module "@mariozechner/pi-tui" {
+declare module "@earendil-works/pi-tui" {
   export type SettingItem = any;
 
   export class Box {

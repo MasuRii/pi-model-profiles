@@ -8,7 +8,7 @@
  * while delegating to the actual runtime APIs.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 /**
  * ModelRegistry interface - subset of methods we need.
