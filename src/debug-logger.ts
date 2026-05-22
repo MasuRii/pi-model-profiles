@@ -82,6 +82,7 @@ export class AsyncBufferedLogWriter {
 	private flushPromise: Promise<void> | null = null;
 	private flushRequestedWhileBusy = false;
 	private shutdownHooksRegistered = false;
+	private shutdownFlushHandler: (() => void) | null = null;
 
 	constructor(private readonly options: AsyncBufferedLogWriterOptions) {
 		this.enabled = options.enabled;
@@ -97,13 +98,13 @@ export class AsyncBufferedLogWriter {
 			options.flushByteLimit,
 			DEFAULT_FLUSH_BYTE_LIMIT,
 		);
-		this.maxBufferedEntries = Math.max(
-			this.flushEntryLimit,
-			normalizePositiveInteger(options.maxBufferedEntries, DEFAULT_MAX_BUFFERED_ENTRIES),
+		this.maxBufferedEntries = normalizePositiveInteger(
+			options.maxBufferedEntries,
+			DEFAULT_MAX_BUFFERED_ENTRIES,
 		);
-		this.maxBufferedBytes = Math.max(
-			this.flushByteLimit,
-			normalizePositiveInteger(options.maxBufferedBytes, DEFAULT_MAX_BUFFERED_BYTES),
+		this.maxBufferedBytes = normalizePositiveInteger(
+			options.maxBufferedBytes,
+			DEFAULT_MAX_BUFFERED_BYTES,
 		);
 		this.createDroppedEntriesLine = options.createDroppedEntriesLine;
 	}
@@ -115,6 +116,7 @@ export class AsyncBufferedLogWriter {
 
 		this.enabled = enabled;
 		if (!enabled) {
+			this.unregisterShutdownHooks();
 			this.clearBuffer();
 		}
 	}
@@ -154,30 +156,39 @@ export class AsyncBufferedLogWriter {
 		}
 
 		this.clearFlushTimer();
-
-		const linesToFlush = [...this.lines];
-		const droppedEntries = this.droppedEntries;
-		this.clearBuffer();
-
-		this.flushPromise = this.performFlush(linesToFlush, droppedEntries);
-		try {
-			await this.flushPromise;
-		} finally {
-			this.flushPromise = null;
-			if (this.flushRequestedWhileBusy) {
-				this.flushRequestedWhileBusy = false;
-				void this.flush();
-			}
+		const payload = this.drainBuffer();
+		if (!payload) {
+			return;
 		}
+
+		const flushPromise = (async () => {
+			try {
+				await appendFile(this.options.logPath, payload, "utf-8");
+			} catch (error) {
+				this.initializationError = error instanceof Error ? error.message : "Failed to write debug log.";
+				this.directoryReady = false;
+				this.requeuePayload(payload);
+				return;
+			}
+
+			await this.hardenLogPermissions();
+		})().finally(async () => {
+			this.flushPromise = null;
+			if (this.flushRequestedWhileBusy || this.lines.length > 0) {
+				this.flushRequestedWhileBusy = false;
+				await this.flush();
+			}
+		});
+		this.flushPromise = flushPromise;
+		await flushPromise;
 	}
 
 	private ensureReady(): string | undefined {
-		if (this.directoryReady) {
-			return undefined;
-		}
-
 		if (this.initializationError) {
 			return this.initializationError;
+		}
+		if (this.directoryReady) {
+			return undefined;
 		}
 
 		try {
@@ -195,25 +206,71 @@ export class AsyncBufferedLogWriter {
 		}
 	}
 
-	private pushLine(line: string): void {
-		const lineBytes = Buffer.byteLength(line, "utf-8");
-
-		if (
-			this.lines.length >= this.maxBufferedEntries ||
-			this.bufferedBytes + lineBytes > this.maxBufferedBytes
-		) {
-			this.droppedEntries++;
+	private async hardenLogPermissions(): Promise<void> {
+		if (process.platform === "win32") {
 			return;
 		}
 
-		this.lines.push(line);
-		this.bufferedBytes += lineBytes;
+		try {
+			await chmod(this.options.logPath, 0o600);
+		} catch (error) {
+			this.initializationError =
+				error instanceof Error ? error.message : "Failed to harden debug log permissions.";
+			this.setEnabled(false);
+		}
 	}
 
-	private clearBuffer(): void {
-		this.lines.length = 0;
-		this.bufferedBytes = 0;
-		this.droppedEntries = 0;
+	private registerShutdownHooks(): void {
+		if (this.shutdownHooksRegistered) {
+			return;
+		}
+
+		this.shutdownHooksRegistered = true;
+		const flushSafely = (): void => {
+			void this.flush();
+		};
+		this.shutdownFlushHandler = flushSafely;
+		process.once("beforeExit", flushSafely);
+	}
+
+	private unregisterShutdownHooks(): void {
+		if (!this.shutdownHooksRegistered || !this.shutdownFlushHandler) {
+			return;
+		}
+
+		process.off("beforeExit", this.shutdownFlushHandler);
+		this.shutdownHooksRegistered = false;
+		this.shutdownFlushHandler = null;
+	}
+
+	async dispose(): Promise<void> {
+		this.unregisterShutdownHooks();
+		await this.flush();
+		this.clearBuffer();
+	}
+
+	private pushLine(line: string): void {
+		const normalizedLine = line.endsWith("\n") ? line : `${line}\n`;
+		this.lines.push(normalizedLine);
+		this.bufferedBytes += Buffer.byteLength(normalizedLine, "utf-8");
+		this.enforceBufferLimits();
+	}
+
+	private enforceBufferLimits(): void {
+		while (
+			this.lines.length > this.maxBufferedEntries ||
+			this.bufferedBytes > this.maxBufferedBytes
+		) {
+			const droppedLine = this.lines.shift();
+			if (!droppedLine) {
+				break;
+			}
+			this.bufferedBytes = Math.max(
+				0,
+				this.bufferedBytes - Buffer.byteLength(droppedLine, "utf-8"),
+			);
+			this.droppedEntries += 1;
+		}
 	}
 
 	private scheduleFlush(): void {
@@ -225,74 +282,49 @@ export class AsyncBufferedLogWriter {
 			this.flushTimer = null;
 			void this.flush();
 		}, this.flushIntervalMs);
+		const flushTimer = this.flushTimer as ReturnType<typeof setTimeout> & {
+			unref?: () => void;
+		};
+		flushTimer.unref?.();
 	}
 
 	private clearFlushTimer(): void {
-		if (this.flushTimer) {
-			clearTimeout(this.flushTimer);
-			this.flushTimer = null;
-		}
-	}
-
-	private async performFlush(lines: string[], droppedEntries: number): Promise<void> {
-		let content = lines.join("");
-
-		if (droppedEntries > 0 && this.createDroppedEntriesLine) {
-			const droppedLine = this.createDroppedEntriesLine(droppedEntries);
-			content = droppedLine + content;
-		}
-
-		try {
-			await appendFile(this.options.logPath, content, "utf-8");
-			if (process.platform !== "win32") {
-				await chmod(this.options.logPath, 0o600);
-			}
-		} catch (error) {
-			this.initializationError =
-				error instanceof Error ? error.message : "Failed to write debug log.";
-			this.directoryReady = false;
-		}
-	}
-
-	private registerShutdownHooks(): void {
-		if (this.shutdownHooksRegistered) {
+		if (!this.flushTimer) {
 			return;
 		}
+		clearTimeout(this.flushTimer);
+		this.flushTimer = null;
+	}
 
-		this.shutdownHooksRegistered = true;
+	private drainBuffer(): string {
+		const pendingLines: string[] = [];
+		if (this.droppedEntries > 0 && this.createDroppedEntriesLine) {
+			pendingLines.push(this.createDroppedEntriesLine(this.droppedEntries));
+			this.droppedEntries = 0;
+		}
+		pendingLines.push(...this.lines);
+		this.lines.length = 0;
+		this.bufferedBytes = 0;
+		return pendingLines.join("");
+	}
 
-		const flushAndExit = async (signal: string): Promise<void> => {
-			try {
-				await this.flush();
-			} finally {
-				process.removeListener(signal, flushAndExit as never);
+	private requeuePayload(payload: string): void {
+		this.clearBuffer();
+		for (const line of payload.split(/(?<=\n)/u)) {
+			if (!line) {
+				continue;
 			}
-		};
+			this.pushLine(line);
+		}
+		this.scheduleFlush();
+	}
 
-		process.on("exit", () => {
-			try {
-				const flushResult = this.flush();
-				if (flushResult && typeof flushResult.then === "function") {
-					flushResult.catch(() => {
-						// Ignore flush errors on exit
-					});
-				}
-			} catch {
-				// Ignore sync flush errors on exit
-			}
-		});
-
-		process.on("beforeExit", () => {
-			void this.flush();
-		});
-
-		process.on("SIGINT", () => {
-			void flushAndExit("SIGINT");
-		});
-
-		process.on("SIGTERM", () => {
-			void flushAndExit("SIGTERM");
-		});
+	private clearBuffer(): void {
+		this.clearFlushTimer();
+		this.lines.length = 0;
+		this.bufferedBytes = 0;
+		this.droppedEntries = 0;
+		this.flushRequestedWhileBusy = false;
 	}
 }
 
