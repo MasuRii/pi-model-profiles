@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes.
+## [0.3.1] - 2026-05-22
+
+### Changed
+- Reworked debug logging to redact sensitive values and use asynchronous buffered file writes with safe shutdown.
+- Updated Pi peer dependencies and runtime imports to the `@earendil-works` scope.
+
+### Fixed
+- Improved debug log writer lifecycle handling so buffered events flush reliably without opening logs when debug is disabled.
 
 ## [0.3.0] - 2026-04-30
 
