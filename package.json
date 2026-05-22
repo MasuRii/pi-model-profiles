@@ -1,6 +1,6 @@
 {
   "name": "pi-model-profiles",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": false,
   "description": "Pi extension for saving, importing, and applying agent model frontmatter profiles.",
   "type": "module",
@@ -22,7 +22,7 @@
     "test:clean": "node -e \"require('node:fs').rmSync('.test-dist', { recursive: true, force: true })\"",
     "prepublishOnly": "npm run test",
     "pretest": "npm run test:clean",
-    "test": "npx --yes -p typescript@5.9.2 tsc --strict --skipLibCheck --module nodenext --moduleResolution nodenext --target ES2022 --outDir .test-dist src/types-shims.d.ts src/errors.ts src/types.ts src/constants.ts src/atomic-write.ts src/profile-fields.ts src/frontmatter-parser.ts src/profile-store.ts src/agent-writer.ts src/import-service.ts test/frontmatter-parser.test.ts test/import-service.test.ts test/agent-writer.test.ts test/profile-store.test.ts && node --test .test-dist/test/frontmatter-parser.test.js .test-dist/test/import-service.test.js .test-dist/test/agent-writer.test.js .test-dist/test/profile-store.test.js",
+    "test": "npx --yes -p typescript@5.9.2 tsc --strict --skipLibCheck --module nodenext --moduleResolution nodenext --target ES2022 --outDir .test-dist src/types-shims.d.ts src/errors.ts src/types.ts src/constants.ts src/atomic-write.ts src/profile-fields.ts src/frontmatter-parser.ts src/profile-store.ts src/agent-writer.ts src/import-service.ts src/config.ts src/debug-logger.ts test/frontmatter-parser.test.ts test/import-service.test.ts test/agent-writer.test.ts test/profile-store.test.ts test/debug-logger.test.ts && node --test .test-dist/test/frontmatter-parser.test.js .test-dist/test/import-service.test.js .test-dist/test/agent-writer.test.js .test-dist/test/profile-store.test.js .test-dist/test/debug-logger.test.js",
     "posttest": "npm run test:clean",
     "check": "npm run build && npm run test",
     "package:dry-run": "npm pack --dry-run"
@@ -57,8 +57,8 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.72.0",
-    "@mariozechner/pi-tui": "^0.72.0"
+    "@earendil-works/pi-coding-agent": "^0.75.4",
+    "@earendil-works/pi-tui": "^0.75.4"
   },
   "publishConfig": {
     "access": "public"
