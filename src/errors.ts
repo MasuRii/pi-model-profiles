@@ -1,3 +1,5 @@
+export const COMMAND_NAME = "model-profiles";
+
 export class ModelProfilesError extends Error {
 	readonly code: string;
 
