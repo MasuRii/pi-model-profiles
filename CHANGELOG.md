@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-01
+
+### Changed
+- Lazy-loaded the model profiles command handler by extracting it into `src/command-handler.ts`, reducing startup work.
+- Widened Pi peer dependency compatibility to include Pi 0.77.x and 0.78.x.
+
 ## [0.3.2] - 2026-05-26
 
 ### Changed
