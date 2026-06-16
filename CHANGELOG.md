@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-06-16
+
+### Fixed
+- Resolved symlinks before writing agent markdown to avoid overwriting the symlink target's parent instead of the linked file.
+- Used `parseCompleteNumericScalar` for frontmatter number parsing to handle trailing non-numeric characters correctly.
+
 ## [0.3.3] - 2026-06-01
 
 ### Changed
