@@ -15,13 +15,23 @@ function normalizeOptionalString(value: unknown): string | undefined {
 	return trimmed ? trimmed : undefined;
 }
 
+const COMPLETE_NUMERIC_SCALAR = /^[+-]?(?:\d+\.?\d*|\.\d+)$/;
+
+export function parseCompleteNumericScalar(value: string): number | undefined {
+	const trimmed = value.trim();
+	if (!COMPLETE_NUMERIC_SCALAR.test(trimmed)) {
+		return undefined;
+	}
+	const parsed = Number.parseFloat(trimmed);
+	return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function normalizeTemperatureValue(value: unknown): number | undefined {
 	if (typeof value === "number") {
 		return Number.isFinite(value) ? value : undefined;
 	}
 	if (typeof value === "string" && value.trim()) {
-		const parsed = Number.parseFloat(value);
-		return Number.isFinite(parsed) ? parsed : undefined;
+		return parseCompleteNumericScalar(value);
 	}
 	return undefined;
 }

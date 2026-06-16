@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,25 @@ import { join } from "node:path";
 import { applySavedProfile, captureAgentSnapshots, detectActiveAgentName } from "../src/agent-writer.js";
 import { readProfileFieldsFromMarkdown } from "../src/frontmatter-parser.js";
 import { createProfile } from "../src/profile-store.js";
+
+interface SymlinkTestContext {
+	skip(reason?: string): void;
+}
+
+const symlinkSync = (fs as unknown as {
+	symlinkSync(target: string, path: string, type?: "file" | "dir" | "junction"): void;
+}).symlinkSync;
+
+function createFileSymlinkOrSkip(t: SymlinkTestContext, targetPath: string, linkPath: string): boolean {
+	try {
+		symlinkSync(targetPath, linkPath, "file");
+		return true;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		t.skip(`symlink creation unsupported in this environment: ${message}`);
+		return false;
+	}
+}
 
 test("detectActiveAgentName prefers saved session entry and falls back to system prompt", () => {
 	const fromEntry = detectActiveAgentName(
@@ -38,6 +58,99 @@ test("detectActiveAgentName prefers saved session entry and falls back to system
 		"",
 	);
 	assert.equal(disabled, null);
+});
+
+test("captureAgentSnapshots discovers symlinked markdown agents like upstream Pi mono", (t: SymlinkTestContext) => {
+	const root = mkdtempSync(join(tmpdir(), "pi-model-profiles-symlink-scan-"));
+	const sourceDir = join(root, "source");
+	const agentsDir = join(root, "agents");
+
+	try {
+		mkdirSync(sourceDir, { recursive: true });
+		mkdirSync(agentsDir, { recursive: true });
+		const targetPath = join(sourceDir, "linked-agent.md");
+		const linkPath = join(agentsDir, "linked-agent.md");
+		writeFileSync(
+			targetPath,
+			[
+				"---",
+				"name: linked-agent",
+				"description: Agent exposed through a symlink",
+				"model: upstream/model",
+				"temperature: 0.3",
+				"---",
+				"Body",
+			].join("\n"),
+			"utf-8",
+		);
+		if (!createFileSymlinkOrSkip(t, targetPath, linkPath)) {
+			return;
+		}
+
+		const snapshot = captureAgentSnapshots(agentsDir);
+
+		assert.deepEqual(snapshot.agents, [
+			{
+				fileName: "linked-agent.md",
+				agentName: "linked-agent",
+				fields: { model: "upstream/model", temperature: 0.3 },
+			},
+		]);
+		assert.deepEqual(snapshot.warnings, []);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("applySavedProfile updates symlinked markdown agents like upstream Pi mono", (t: SymlinkTestContext) => {
+	const root = mkdtempSync(join(tmpdir(), "pi-model-profiles-symlink-apply-"));
+	const sourceDir = join(root, "source");
+	const agentsDir = join(root, "agents");
+
+	try {
+		mkdirSync(sourceDir, { recursive: true });
+		mkdirSync(agentsDir, { recursive: true });
+		const targetPath = join(sourceDir, "linked-agent.md");
+		const linkPath = join(agentsDir, "linked-agent.md");
+		writeFileSync(
+			targetPath,
+			[
+				"---",
+				"name: linked-agent",
+				"description: Agent exposed through a symlink",
+				"model: stale/model",
+				"permission:",
+				"  tools:",
+				"    read: allow",
+				"---",
+				"Body",
+			].join("\n"),
+			"utf-8",
+		);
+		if (!createFileSymlinkOrSkip(t, targetPath, linkPath)) {
+			return;
+		}
+		const snapshot = createProfile("symlink snapshot", [
+			{
+				fileName: "linked-agent.md",
+				agentName: "linked-agent",
+				fields: { model: "openai/gpt-5", reasoningEffort: "high" },
+			},
+		]);
+
+		const applied = applySavedProfile(snapshot, agentsDir);
+
+		assert.equal(applied.appliedAgents.length, 1);
+		assert.deepEqual(applied.missingAgents, []);
+		assert.deepEqual(applied.warnings, []);
+		assert.deepEqual(readProfileFieldsFromMarkdown(readFileSync(linkPath, "utf-8")), {
+			model: "openai/gpt-5",
+			reasoningEffort: "high",
+		});
+		assert.match(readFileSync(linkPath, "utf-8"), /permission:\n  tools:\n    read: allow/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("captureAgentSnapshots prefers project-local agents when cwd scope includes project", () => {

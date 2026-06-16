@@ -1,5 +1,6 @@
 import { PROFILE_FIELD_KEYS, type ProfileFieldKey, type ProfileFields } from "./types.js";
 import { ModelProfilesError } from "./errors.js";
+import { parseCompleteNumericScalar } from "./profile-fields.js";
 
 interface FrontmatterDocument {
 	frontmatter: string;
@@ -206,8 +207,8 @@ export function readProfileFieldsFromMarkdown(markdown: string): ProfileFields {
 	}
 
 	if (values.temperature !== undefined) {
-		const parsedTemperature = Number.parseFloat(values.temperature);
-		if (!Number.isFinite(parsedTemperature)) {
+		const parsedTemperature = parseCompleteNumericScalar(values.temperature);
+		if (parsedTemperature === undefined) {
 			throw new ModelProfilesError(
 				`Frontmatter field 'temperature' must be numeric, received '${values.temperature}'.`,
 				"INVALID_TEMPERATURE",

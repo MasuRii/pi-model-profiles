@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { AGENTS_DIR } from "./constants.js";
@@ -31,6 +31,12 @@ interface SessionEntryLike {
 
 interface SessionManagerLike {
 	getEntries(): readonly unknown[];
+}
+
+interface AgentDirectoryEntry {
+	name: string;
+	isFile(): boolean;
+	isSymbolicLink(): boolean;
 }
 
 type AgentScope = "user" | "project" | "both";
@@ -130,6 +136,22 @@ function isDirectory(path: string): boolean {
 	}
 }
 
+function isMarkdownAgentEntry(entry: AgentDirectoryEntry): boolean {
+	return entry.name.endsWith(".md") && (entry.isFile() || entry.isSymbolicLink());
+}
+
+function resolveAgentWritePath(filePath: string): string {
+	try {
+		return lstatSync(filePath).isSymbolicLink() ? realpathSync(filePath) : filePath;
+	} catch {
+		return filePath;
+	}
+}
+
+function writeAgentMarkdown(filePath: string, markdown: string): void {
+	writeFileAtomic(resolveAgentWritePath(filePath), markdown);
+}
+
 function findNearestProjectAgentDirs(cwd: string): string[] {
 	let currentDir = resolve(cwd);
 
@@ -187,15 +209,15 @@ export function scanAgentFiles(options: string | AgentSelectionOptions = AGENTS_
 	const agentsByName = new Map<string, AgentFileRecord>();
 
 	for (const agentsDir of sourceDirs) {
-		let entries: Array<{ name: string; isFile(): boolean }>;
+		let entries: AgentDirectoryEntry[];
 		try {
-			entries = readdirSync(agentsDir, { withFileTypes: true }) as Array<{ name: string; isFile(): boolean }>;
+			entries = readdirSync(agentsDir, { withFileTypes: true }) as AgentDirectoryEntry[];
 		} catch {
 			throw new ModelProfilesError(`Unable to read agents directory '${agentsDir}'.`, "AGENTS_DIR_UNAVAILABLE");
 		}
 
 		for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-			if (!entry.isFile() || !entry.name.endsWith(".md")) {
+			if (!isMarkdownAgentEntry(entry)) {
 				continue;
 			}
 
@@ -247,7 +269,7 @@ export function applyProfileToAgentRecord(agent: AgentFileRecord, fields: Profil
 	const normalizedFields = normalizeProfileFields(fields);
 	const markdown = readFileSync(agent.path, "utf-8");
 	const updatedMarkdown = updateMarkdownProfileFields(markdown, normalizedFields);
-	writeFileAtomic(agent.path, updatedMarkdown);
+	writeAgentMarkdown(agent.path, updatedMarkdown);
 	return {
 		updatedPath: agent.path,
 		fileName: agent.fileName,
@@ -314,7 +336,7 @@ export function applySavedProfile(profile: SavedProfile, options: string | Agent
 	}
 
 	for (const pending of pendingWrites) {
-		writeFileAtomic(pending.target.path, pending.updatedMarkdown);
+		writeAgentMarkdown(pending.target.path, pending.updatedMarkdown);
 	}
 
 	return {
