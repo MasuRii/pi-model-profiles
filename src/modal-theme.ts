@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { SETTINGS_PATH, THEMES_DIR } from "./constants.js";
+import { normalizeOptionalString, toRecord } from "./shared/record-utils.js";
 
 interface ThemeLike {
 	name?: unknown;
@@ -91,21 +92,6 @@ export const BOX = {
 	CROSS: "┼",
 } as const;
 
-function toRecord(value: unknown): Record<string, unknown> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return {};
-	}
-	return value as Record<string, unknown>;
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-	if (typeof value !== "string") {
-		return undefined;
-	}
-	const trimmed = value.trim();
-	return trimmed ? trimmed : undefined;
-}
-
 function normalizeThemeName(theme: ThemeLike): string {
 	return normalizeOptionalString(theme.name) ?? "current";
 }
@@ -154,30 +140,25 @@ function resolveThemeReference(reference: string, source: ThemeSourceMaps, visit
 	return resolveThemeReference(chained, source, visited);
 }
 
-function toAnsiForeground(color: string): string {
+function toAnsiColor(color: string, layerCode: 38 | 48, fallbackCode: number): string {
 	const hex = expandHexColor(color);
 	if (hex) {
 		const red = Number.parseInt(hex.slice(1, 3), 16);
 		const green = Number.parseInt(hex.slice(3, 5), 16);
 		const blue = Number.parseInt(hex.slice(5, 7), 16);
-		return `\x1b[38;2;${red};${green};${blue}m`;
+		return `\x1b[${layerCode};2;${red};${green};${blue}m`;
 	}
 
-	const code = NAMED_COLOR_CODES[color.toLowerCase()] ?? NAMED_COLOR_CODES.white;
-	return `\x1b[38;5;${code}m`;
+	const code = NAMED_COLOR_CODES[color.toLowerCase()] ?? fallbackCode;
+	return `\x1b[${layerCode};5;${code}m`;
+}
+
+function toAnsiForeground(color: string): string {
+	return toAnsiColor(color, 38, NAMED_COLOR_CODES.white);
 }
 
 function toAnsiBackground(color: string): string {
-	const hex = expandHexColor(color);
-	if (hex) {
-		const red = Number.parseInt(hex.slice(1, 3), 16);
-		const green = Number.parseInt(hex.slice(3, 5), 16);
-		const blue = Number.parseInt(hex.slice(5, 7), 16);
-		return `\x1b[48;2;${red};${green};${blue}m`;
-	}
-
-	const code = NAMED_COLOR_CODES[color.toLowerCase()] ?? NAMED_COLOR_CODES.black;
-	return `\x1b[48;5;${code}m`;
+	return toAnsiColor(color, 48, NAMED_COLOR_CODES.black);
 }
 
 function formatWithFallback(theme: ThemeLike, colorName: string, text: string): string {
@@ -186,8 +167,9 @@ function formatWithFallback(theme: ThemeLike, colorName: string, text: string): 
 			const formatter = theme.fg as (resolvedColor: string, value: string) => string;
 			return formatter(colorName, text);
 		}
-	} catch {
+	} catch (formatError) {
 		// Fall back to plain text.
+		void formatError;
 	}
 	return text;
 }
@@ -198,8 +180,9 @@ function formatBold(theme: ThemeLike, text: string): string {
 			const formatter = theme.bold as (value: string) => string;
 			return formatter(text);
 		}
-	} catch {
+	} catch (boldError) {
 		// Fall back to ANSI bold below.
+		void boldError;
 	}
 	return `${ANSI_BOLD}${text}${ANSI_RESET}`;
 }

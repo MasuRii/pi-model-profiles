@@ -1,12 +1,13 @@
 import { multiProfilesDebugLogger } from "./debug-logger.js";
-import { ModelProfilesError } from "./errors.js";
 import { captureAgentSnapshots, type AgentSelectionOptions } from "./agent-writer.js";
 import type { ProfilesFile, ProfileUpdateResult, SavedProfile } from "./types.js";
+import { findProfileOrThrow, PROFILE_NOT_FOUND_CODE } from "./shared/profile-errors.js";
 
 /**
- * Error code for profile not found during update.
+ * Error code for profile not found during update. Re-exported from the
+ * shared profile-errors module to preserve this module's public API.
  */
-export const PROFILE_NOT_FOUND_CODE = "PROFILE_NOT_FOUND";
+export { PROFILE_NOT_FOUND_CODE } from "./shared/profile-errors.js";
 
 export interface ProfileUpdateDataResult {
 	data: ProfilesFile;
@@ -20,30 +21,12 @@ interface ProfileUpdatePlan {
 	result: ProfileUpdateResult;
 }
 
-function createProfileNotFoundError(profileId: string): ModelProfilesError {
-	return new ModelProfilesError(
-		`Profile '${profileId}' not found. It may have been removed already.`,
-		PROFILE_NOT_FOUND_CODE,
-	);
-}
-
 function buildUpdatePlan(
 	data: ProfilesFile,
 	profileId: string,
 	agentOptions: AgentSelectionOptions,
 ): ProfileUpdatePlan {
-	const profileIndex = data.profiles.findIndex((profile) => profile.id === profileId);
-	const profile = data.profiles[profileIndex];
-
-	if (profileIndex === -1 || !profile) {
-		multiProfilesDebugLogger.log("profile-update", {
-			event: "update_failed",
-			profileId,
-			reason: "profile_not_found",
-			profileCount: data.profiles.length,
-		});
-		throw createProfileNotFoundError(profileId);
-	}
+	const { profile, profileIndex } = findProfileOrThrow(data, profileId, "profile-update", "update_failed");
 
 	const snapshot = captureAgentSnapshots(agentOptions);
 	const updatedProfile: SavedProfile = {

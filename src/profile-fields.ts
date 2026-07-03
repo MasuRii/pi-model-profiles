@@ -1,19 +1,5 @@
+import { normalizeOptionalString, toRecord } from "./shared/record-utils.js";
 import type { ProfileFieldKey, ProfileFields } from "./types.js";
-
-function toRecord(value: unknown): Record<string, unknown> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return {};
-	}
-	return value as Record<string, unknown>;
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-	if (typeof value !== "string") {
-		return undefined;
-	}
-	const trimmed = value.trim();
-	return trimmed ? trimmed : undefined;
-}
 
 const COMPLETE_NUMERIC_SCALAR = /^[+-]?(?:\d+\.?\d*|\.\d+)$/;
 

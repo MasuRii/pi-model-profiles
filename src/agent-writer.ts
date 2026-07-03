@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
+import { normalizeOptionalString, toRecord } from "./shared/record-utils.js";
 import { AGENTS_DIR } from "./constants.js";
 import { writeFileAtomic } from "./atomic-write.js";
 import { ModelProfilesError } from "./errors.js";
@@ -53,19 +54,8 @@ const PROJECT_AGENT_SOURCE_DIRS = [
 	[".claude", "agents"],
 ] as const;
 
-function toRecord(value: unknown): Record<string, unknown> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return {};
-	}
-	return value as Record<string, unknown>;
-}
-
 function normalizeName(value: unknown): string | null {
-	if (typeof value !== "string") {
-		return null;
-	}
-	const trimmed = value.trim();
-	return trimmed ? trimmed : null;
+	return normalizeOptionalString(value) ?? null;
 }
 
 function normalizeCompareValue(value: string): string {
@@ -94,7 +84,7 @@ function cloneSavedAgent(agent: SavedProfileAgent): SavedProfileAgent {
 	};
 }
 
-function normalizeSavedAgents(agents: readonly SavedProfileAgent[]): SavedProfileAgent[] {
+export function normalizeSavedAgents(agents: readonly SavedProfileAgent[]): SavedProfileAgent[] {
 	return [...agents]
 		.map((agent) => cloneSavedAgent(agent))
 		.sort((left, right) => left.fileName.localeCompare(right.fileName) || left.agentName.localeCompare(right.agentName));

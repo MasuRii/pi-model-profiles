@@ -9,10 +9,11 @@ import {
 	PROFILE_STORE_PATH,
 	PROFILE_STORE_VERSION,
 } from "./constants.js";
-import { captureAgentSnapshots, type AgentSelectionOptions } from "./agent-writer.js";
+import { captureAgentSnapshots, normalizeSavedAgents, type AgentSelectionOptions } from "./agent-writer.js";
 import { writeFileAtomic } from "./atomic-write.js";
 import { ModelProfilesError } from "./errors.js";
 import { normalizeProfileFields, sanitizeProfileName } from "./profile-fields.js";
+import { normalizeOptionalString, toRecord } from "./shared/record-utils.js";
 import type { ProfileStoreLoadResult, ProfilesFile, SavedProfile, SavedProfileAgent, ProfileFields } from "./types.js";
 
 interface LegacySavedProfile {
@@ -24,41 +25,8 @@ interface LegacySavedProfile {
 	updatedAt: string;
 }
 
-function toRecord(value: unknown): Record<string, unknown> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return {};
-	}
-	return value as Record<string, unknown>;
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-	if (typeof value !== "string") {
-		return undefined;
-	}
-	const trimmed = value.trim();
-	return trimmed ? trimmed : undefined;
-}
-
 function normalizeTimestamp(value: unknown, fallback: string): string {
-	if (typeof value !== "string") {
-		return fallback;
-	}
-	const trimmed = value.trim();
-	return trimmed ? trimmed : fallback;
-}
-
-function normalizeSavedAgents(agents: readonly SavedProfileAgent[]): SavedProfileAgent[] {
-	return [...agents]
-		.map((agent) => ({
-			fileName: agent.fileName,
-			agentName: agent.agentName,
-			fields: normalizeProfileFields(agent.fields),
-		}))
-		.sort((left, right) => left.fileName.localeCompare(right.fileName) || left.agentName.localeCompare(right.agentName));
-}
-
-function cloneSavedAgents(agents: readonly SavedProfileAgent[]): SavedProfileAgent[] {
-	return normalizeSavedAgents(agents);
+	return normalizeOptionalString(value) ?? fallback;
 }
 
 function normalizeSavedAgent(raw: unknown, warnings: string[]): SavedProfileAgent | null {
@@ -89,17 +57,29 @@ function dedupeSavedAgents(agents: readonly SavedProfileAgent[], warnings: strin
 	return normalizeSavedAgents([...byFileName.values()]);
 }
 
-function normalizeSnapshotProfile(raw: unknown, warnings: string[]): SavedProfile | null {
-	const source = toRecord(raw);
+function readProfileIdentity(
+	source: Record<string, unknown>,
+	warnings: string[],
+	malformedWarning: string,
+): { id: string; name: string } | null {
 	const id = normalizeOptionalString(source.id);
 	const name = sanitizeProfileName(typeof source.name === "string" ? source.name : "");
 	if (!id || !name) {
-		warnings.push("Skipped one malformed saved profile entry.");
+		warnings.push(malformedWarning);
+		return null;
+	}
+	return { id, name };
+}
+
+function normalizeSnapshotProfile(raw: unknown, warnings: string[]): SavedProfile | null {
+	const source = toRecord(raw);
+	const identity = readProfileIdentity(source, warnings, "Skipped one malformed saved profile entry.");
+	if (!identity) {
 		return null;
 	}
 
 	if (!Array.isArray(source.agents)) {
-		warnings.push(`Saved profile '${name}' was missing its agent snapshot list and was skipped.`);
+		warnings.push(`Saved profile '${identity.name}' was missing its agent snapshot list and was skipped.`);
 		return null;
 	}
 
@@ -109,13 +89,13 @@ function normalizeSnapshotProfile(raw: unknown, warnings: string[]): SavedProfil
 		warnings,
 	);
 	if (agents.length === 0) {
-		warnings.push(`Saved profile '${name}' had no valid agent snapshots and was skipped.`);
+		warnings.push(`Saved profile '${identity.name}' had no valid agent snapshots and was skipped.`);
 		return null;
 	}
 
 	return {
-		id,
-		name,
+		id: identity.id,
+		name: identity.name,
 		agents,
 		createdAt: normalizeTimestamp(source.createdAt, timestamp),
 		updatedAt: normalizeTimestamp(source.updatedAt, timestamp),
@@ -124,17 +104,15 @@ function normalizeSnapshotProfile(raw: unknown, warnings: string[]): SavedProfil
 
 function normalizeLegacySavedProfile(raw: unknown, warnings: string[]): LegacySavedProfile | null {
 	const source = toRecord(raw);
-	const id = normalizeOptionalString(source.id);
-	const name = sanitizeProfileName(typeof source.name === "string" ? source.name : "");
-	if (!id || !name) {
-		warnings.push("Skipped one malformed legacy saved profile entry.");
+	const identity = readProfileIdentity(source, warnings, "Skipped one malformed legacy saved profile entry.");
+	if (!identity) {
 		return null;
 	}
 
 	const timestamp = new Date().toISOString();
 	return {
-		id,
-		name,
+		id: identity.id,
+		name: identity.name,
 		fields: normalizeProfileFields(source.fields),
 		sourceAgent: normalizeOptionalString(source.sourceAgent),
 		createdAt: normalizeTimestamp(source.createdAt, timestamp),
@@ -166,7 +144,7 @@ function buildMigrationBaseline(
 	try {
 		const snapshot = captureAgentSnapshots(agentOptions);
 		warnings.push(...snapshot.warnings);
-		return cloneSavedAgents(snapshot.agents);
+		return normalizeSavedAgents(snapshot.agents);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		warnings.push(`Legacy model profile migration could not read the current agents snapshot: ${message}`);
@@ -182,14 +160,14 @@ function buildImportedSnapshotProfile(importedAt: string, baseline: readonly Sav
 	return {
 		id,
 		name: INITIAL_PROFILE_NAME,
-		agents: cloneSavedAgents(baseline),
+		agents: normalizeSavedAgents(baseline),
 		createdAt: importedAt,
 		updatedAt: importedAt,
 	};
 }
 
 function migrateLegacyProfile(profile: LegacySavedProfile, baseline: readonly SavedProfileAgent[], warnings: string[]): SavedProfile | null {
-	const nextAgents = cloneSavedAgents(baseline);
+	const nextAgents = normalizeSavedAgents(baseline);
 	const sourceAgent = profile.sourceAgent;
 
 	if (sourceAgent) {
@@ -370,7 +348,7 @@ export function findProfileById(data: ProfilesFile, profileId: string): SavedPro
 export function appendProfile(data: ProfilesFile, profile: SavedProfile): ProfilesFile {
 	return {
 		...data,
-		profiles: [...data.profiles, { ...profile, agents: cloneSavedAgents(profile.agents) }],
+		profiles: [...data.profiles, { ...profile, agents: normalizeSavedAgents(profile.agents) }],
 	};
 }
 

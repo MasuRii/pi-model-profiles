@@ -1,11 +1,12 @@
 import { multiProfilesDebugLogger } from "./debug-logger.js";
-import { ModelProfilesError } from "./errors.js";
 import type { ProfilesFile, ProfileRemovalResult, SavedProfile } from "./types.js";
+import { findProfileOrThrow, PROFILE_NOT_FOUND_CODE } from "./shared/profile-errors.js";
 
 /**
- * Error code for profile not found during removal.
+ * Error code for profile not found during removal. Re-exported from the
+ * shared profile-errors module to preserve this module's public API.
  */
-export const PROFILE_NOT_FOUND_CODE = "PROFILE_NOT_FOUND";
+export { PROFILE_NOT_FOUND_CODE } from "./shared/profile-errors.js";
 
 export interface ProfileRemovalUpdateResult {
 	data: ProfilesFile;
@@ -18,26 +19,8 @@ interface ProfileRemovalPlan {
 	result: ProfileRemovalResult;
 }
 
-function createProfileNotFoundError(profileId: string): ModelProfilesError {
-	return new ModelProfilesError(
-		`Profile '${profileId}' not found. It may have been removed already.`,
-		PROFILE_NOT_FOUND_CODE,
-	);
-}
-
 function buildRemovalPlan(data: ProfilesFile, profileId: string): ProfileRemovalPlan {
-	const profileIndex = data.profiles.findIndex((profile) => profile.id === profileId);
-	const profile = data.profiles[profileIndex];
-
-	if (profileIndex === -1 || !profile) {
-		multiProfilesDebugLogger.log("profile-removal", {
-			event: "removal_failed",
-			profileId,
-			reason: "profile_not_found",
-			profileCount: data.profiles.length,
-		});
-		throw createProfileNotFoundError(profileId);
-	}
+	const { profile, profileIndex } = findProfileOrThrow(data, profileId, "profile-removal", "removal_failed");
 
 	const remainingProfiles = [
 		...data.profiles.slice(0, profileIndex),

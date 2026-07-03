@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { ProfileSortOrder } from "./types.js";
+import { toRecord } from "./shared/record-utils.js";
 
 export const EXTENSION_NAME = "pi-model-profiles";
 
@@ -21,6 +22,8 @@ export interface SortingConfig {
 }
 
 export interface MultiProfilesConfig {
+	/** Enable or disable the extension at load time (default: true) */
+	enabled: boolean;
 	/** Enable debug logging (default: false) */
 	debug: boolean;
 	/** Profile storage configuration */
@@ -45,6 +48,7 @@ export const DEFAULT_SORTING_CONFIG: SortingConfig = {
 };
 
 export const DEFAULT_MULTI_PROFILES_CONFIG: MultiProfilesConfig = {
+	enabled: true,
 	debug: false,
 	profiles: { ...DEFAULT_PROFILES_CONFIG },
 	sorting: { ...DEFAULT_SORTING_CONFIG },
@@ -65,6 +69,7 @@ function cloneSortingConfig(config: SortingConfig = DEFAULT_SORTING_CONFIG): Sor
 
 function cloneMultiProfilesConfig(config: MultiProfilesConfig = DEFAULT_MULTI_PROFILES_CONFIG): MultiProfilesConfig {
 	return {
+		enabled: config.enabled,
 		debug: config.debug,
 		profiles: cloneProfilesConfig(config.profiles),
 		sorting: cloneSortingConfig(config.sorting),
@@ -88,13 +93,6 @@ export const DEBUG_LOG_PATH = join(DEBUG_DIR, `${EXTENSION_NAME}-debug.jsonl`);
 
 function createDefaultConfigContent(): string {
 	return JSON.stringify(DEFAULT_MULTI_PROFILES_CONFIG, null, "\t");
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-	if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-		return value as Record<string, unknown>;
-	}
-	return {};
 }
 
 function formatValue(value: unknown): string {
@@ -181,12 +179,13 @@ function normalizeConfig(raw: unknown): { config: MultiProfilesConfig; warnings:
 	const warnings: string[] = [];
 	const obj = toRecord(raw);
 
+	const enabled = readBoolean(obj.enabled, "enabled", DEFAULT_MULTI_PROFILES_CONFIG.enabled, warnings);
 	const debug = readBoolean(obj.debug, "debug", DEFAULT_MULTI_PROFILES_CONFIG.debug, warnings);
 	const profiles = normalizeProfilesConfig(obj.profiles, warnings);
 	const sorting = normalizeSortingConfig(obj.sorting, warnings);
 
 	return {
-		config: { debug, profiles, sorting },
+		config: { enabled, debug, profiles, sorting },
 		warnings,
 	};
 }
