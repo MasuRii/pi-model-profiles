@@ -107,20 +107,22 @@ function fitText(text: string, width: number): string {
 	return padEndToWidth(truncateToWidth(text, safeWidth, "…", true), safeWidth);
 }
 
-function centerText(text: string, width: number): string {
+function clipToWidth(text: string, width: number): { clipped: string; slack: number } {
 	const safeWidth = Math.max(1, width);
 	const clipped = truncateToWidth(text, safeWidth, "…", true);
-	const remaining = Math.max(0, safeWidth - visibleWidth(clipped));
-	const left = Math.floor(remaining / 2);
-	const right = remaining - left;
+	return { clipped, slack: Math.max(0, safeWidth - visibleWidth(clipped)) };
+}
+
+function centerText(text: string, width: number): string {
+	const { clipped, slack } = clipToWidth(text, width);
+	const left = Math.floor(slack / 2);
+	const right = slack - left;
 	return `${" ".repeat(left)}${clipped}${" ".repeat(right)}`;
 }
 
 function alignRight(text: string, width: number): string {
-	const safeWidth = Math.max(1, width);
-	const clipped = truncateToWidth(text, safeWidth, "…", true);
-	const padding = Math.max(0, safeWidth - visibleWidth(clipped));
-	return `${" ".repeat(padding)}${clipped}`;
+	const { clipped, slack } = clipToWidth(text, width);
+	return `${" ".repeat(slack)}${clipped}`;
 }
 
 function fitLineToWidth(text: string, width: number): string {
@@ -256,32 +258,49 @@ function formatReasoningValue(agent: SavedProfileAgent): string {
 	return value;
 }
 
-function buildProfileScrollIndicator(offset: number, totalItems: number, visibleItems: number): string {
-	const shownEnd = Math.min(totalItems, offset + visibleItems);
-	const remainingAbove = offset;
-	const remainingBelow = Math.max(0, totalItems - shownEnd);
-
-	if (remainingAbove > 0 && remainingBelow > 0) {
-		return `[↑ ${remainingAbove} | ↓ ${remainingBelow}]`;
-	}
-	if (remainingBelow > 0) {
-		return `[↓ ${remainingBelow} more]`;
-	}
-	return `[↑ ${remainingAbove} above]`;
+interface ScrollIndicatorFormat {
+	bothTemplate: (above: number, below: number) => string;
+	belowOnlyTemplate: (below: number) => string;
+	aboveOnlyTemplate: (above: number) => string;
 }
 
-function buildAgentScrollIndicator(offset: number, totalItems: number, visibleItems: number): string {
+function buildScrollIndicator(
+	offset: number,
+	totalItems: number,
+	visibleItems: number,
+	format: ScrollIndicatorFormat,
+): string {
 	const shownEnd = Math.min(totalItems, offset + visibleItems);
 	const remainingAbove = offset;
 	const remainingBelow = Math.max(0, totalItems - shownEnd);
 
 	if (remainingAbove > 0 && remainingBelow > 0) {
-		return `[ ↑ ${remainingAbove} | ↓ ${remainingBelow} more ]`;
+		return format.bothTemplate(remainingAbove, remainingBelow);
 	}
 	if (remainingBelow > 0) {
-		return `[ ↓ Scroll (${remainingBelow} more) ]`;
+		return format.belowOnlyTemplate(remainingBelow);
 	}
-	return `[ ↑ Scroll (${remainingAbove} above) ]`;
+	return format.aboveOnlyTemplate(remainingAbove);
+}
+
+const PROFILE_SCROLL_FORMAT: ScrollIndicatorFormat = {
+	bothTemplate: (above, below) => `[↑ ${above} | ↓ ${below}]`,
+	belowOnlyTemplate: (below) => `[↓ ${below} more]`,
+	aboveOnlyTemplate: (above) => `[↑ ${above} above]`,
+};
+
+function buildProfileScrollIndicator(offset: number, totalItems: number, visibleItems: number): string {
+	return buildScrollIndicator(offset, totalItems, visibleItems, PROFILE_SCROLL_FORMAT);
+}
+
+const AGENT_SCROLL_FORMAT: ScrollIndicatorFormat = {
+	bothTemplate: (above, below) => `[ ↑ ${above} | ↓ ${below} more ]`,
+	belowOnlyTemplate: (below) => `[ ↓ Scroll (${below} more) ]`,
+	aboveOnlyTemplate: (above) => `[ ↑ Scroll (${above} above) ]`,
+};
+
+function buildAgentScrollIndicator(offset: number, totalItems: number, visibleItems: number): string {
+	return buildScrollIndicator(offset, totalItems, visibleItems, AGENT_SCROLL_FORMAT);
 }
 
 function renderMetadataLine(theme: ResolvedModalTheme, label: string, value: string, width: number): string {
@@ -551,6 +570,26 @@ class ProfileListModal {
 		}
 	}
 
+	private padToContentRows(lines: string[], width: number, contentRows: number): void {
+		while (lines.length < contentRows) {
+			lines.push(" ".repeat(width));
+		}
+	}
+
+	private finishEmptyPane(lines: string[], hint: string, width: number, contentRows: number): string[] {
+		lines.push(this.theme.color("dim", fitText(`  ${hint}`, width)));
+		this.padToContentRows(lines, width, contentRows);
+		return lines;
+	}
+
+	private appendIndicatorAndPad(lines: string[], indicator: string | null, width: number, contentRows: number): string[] {
+		if (indicator !== null) {
+			lines.push(this.theme.color("dim", indicator));
+		}
+		this.padToContentRows(lines, width, contentRows);
+		return lines;
+	}
+
 	private buildSnapshotPaneRows(width: number, contentRows: number): string[] {
 		const lines: string[] = [];
 		const profiles = this.getSortedProfiles();
@@ -559,11 +598,7 @@ class ProfileListModal {
 		this.ensureSelectedVisible(viewportRows);
 
 		if (profiles.length === 0) {
-			lines.push(this.theme.color("dim", fitText(`  ${EMPTY_PROFILE_HINT}`, width)));
-			while (lines.length < contentRows) {
-				lines.push(" ".repeat(width));
-			}
-			return lines;
+			return this.finishEmptyPane(lines, EMPTY_PROFILE_HINT, width, contentRows);
 		}
 
 		for (let index = 0; index < viewportRows; index += 1) {
@@ -583,16 +618,8 @@ class ProfileListModal {
 			lines.push(this.theme.color("text", label));
 		}
 
-		if (needsIndicator) {
-			const indicator = alignRight(buildProfileScrollIndicator(this.listScrollOffset, profiles.length, viewportRows), width);
-			lines.push(this.theme.color("dim", indicator));
-		}
-
-		while (lines.length < contentRows) {
-			lines.push(" ".repeat(width));
-		}
-
-		return lines;
+		const indicator = needsIndicator ? alignRight(buildProfileScrollIndicator(this.listScrollOffset, profiles.length, viewportRows), width) : null;
+		return this.appendIndicatorAndPad(lines, indicator, width, contentRows);
 	}
 
 	private buildDetailsPaneRows(profile: SavedProfile | null, width: number, contentRows: number): string[] {
@@ -601,11 +628,7 @@ class ProfileListModal {
 		if (!profile) {
 			lines.push(indentStyledLine(renderMetadataLine(this.theme, "Updated:", "-", Math.max(1, width - 2)), width));
 			lines.push(" ".repeat(width));
-			lines.push(this.theme.color("dim", fitText(`  ${EMPTY_DETAILS_HINT}`, width)));
-			while (lines.length < contentRows) {
-				lines.push(" ".repeat(width));
-			}
-			return lines;
+			return this.finishEmptyPane(lines, EMPTY_DETAILS_HINT, width, contentRows);
 		}
 
 		const fixedRowsBeforeData = 4;
@@ -628,16 +651,8 @@ class ProfileListModal {
 			lines.push(content);
 		}
 
-		if (needsIndicator) {
-			const indicator = centerText(buildAgentScrollIndicator(this.detailScrollOffset, profile.agents.length, viewportRows), width);
-			lines.push(this.theme.color("dim", indicator));
-		}
-
-		while (lines.length < contentRows) {
-			lines.push(" ".repeat(width));
-		}
-
-		return lines;
+		const indicator = needsIndicator ? centerText(buildAgentScrollIndicator(this.detailScrollOffset, profile.agents.length, viewportRows), width) : null;
+		return this.appendIndicatorAndPad(lines, indicator, width, contentRows);
 	}
 
 	private buildFooterLines(width: number): string[] {
@@ -720,6 +735,14 @@ class ProfileListModal {
 		}
 	}
 
+	private finalizeSelectionChange(selectedProfileId: string | null): void {
+		this.selectedProfileId = selectedProfileId;
+		this.detailScrollOffset = 0;
+		this.message = null;
+		this.ensureSelectedVisible(this.getSnapshotViewportRows());
+		this.requestRender();
+	}
+
 	private moveSelection(delta: number): void {
 		const profiles = this.getSortedProfiles();
 		if (profiles.length === 0) {
@@ -728,11 +751,7 @@ class ProfileListModal {
 
 		const currentIndex = Math.max(0, profiles.findIndex((profile) => profile.id === this.selectedProfileId));
 		const nextIndex = clamp(currentIndex + delta, 0, profiles.length - 1);
-		this.selectedProfileId = profiles[nextIndex]?.id ?? null;
-		this.detailScrollOffset = 0;
-		this.message = null;
-		this.ensureSelectedVisible(this.getSnapshotViewportRows());
-		this.requestRender();
+		this.finalizeSelectionChange(profiles[nextIndex]?.id ?? null);
 	}
 
 	private moveSelectionToBoundary(boundary: "start" | "end"): void {
@@ -740,11 +759,7 @@ class ProfileListModal {
 		if (profiles.length === 0) {
 			return;
 		}
-		this.selectedProfileId = boundary === "start" ? profiles[0]?.id ?? null : profiles[profiles.length - 1]?.id ?? null;
-		this.detailScrollOffset = 0;
-		this.message = null;
-		this.ensureSelectedVisible(this.getSnapshotViewportRows());
-		this.requestRender();
+		this.finalizeSelectionChange(boundary === "start" ? profiles[0]?.id ?? null : profiles[profiles.length - 1]?.id ?? null);
 	}
 
 	private startRename(): void {
@@ -822,6 +837,13 @@ class ProfileListModal {
 		this.requestRender();
 	}
 
+	private applyActionResult(result: ProfileModalMutationResult, fallbackSelectedId: string | null): void {
+		this.data = result.data;
+		this.selectedProfileId = result.selectedProfileId ?? fallbackSelectedId;
+		this.detailScrollOffset = 0;
+		this.message = { text: result.message, level: "info" };
+	}
+
 	private startRemove(): void {
 		const profile = this.getSelectedProfile();
 		if (!profile) {
@@ -837,10 +859,7 @@ class ProfileListModal {
 			busyMessage: `Removing '${profile.name}'...`,
 			onConfirm: async (targetId) => {
 				const result = await this.actions.removeProfile(targetId);
-				this.data = result.data;
-				this.selectedProfileId = result.selectedProfileId ?? this.getSortedProfiles()[0]?.id ?? null;
-				this.detailScrollOffset = 0;
-				this.message = { text: result.message, level: "info" };
+				this.applyActionResult(result, this.getSortedProfiles()[0]?.id ?? null);
 			},
 		});
 	}
@@ -849,10 +868,7 @@ class ProfileListModal {
 		const activeHint = this.activeAgentName ? ` from ${this.activeAgentName}` : "";
 		this.runAction(`Capturing current snapshot${activeHint}...`, async () => {
 			const result = await this.actions.addCurrentProfile();
-			this.data = result.data;
-			this.selectedProfileId = result.selectedProfileId ?? this.selectedProfileId;
-			this.detailScrollOffset = 0;
-			this.message = { text: result.message, level: "info" };
+			this.applyActionResult(result, this.selectedProfileId);
 		});
 	}
 
@@ -872,10 +888,7 @@ class ProfileListModal {
 			busyMessage: `Updating '${profile.name}' with current agent state...`,
 			onConfirm: async (targetId) => {
 				const result = await this.actions.updateProfile(targetId);
-				this.data = result.data;
-				this.selectedProfileId = result.selectedProfileId ?? targetId;
-				this.detailScrollOffset = 0;
-				this.message = { text: result.message, level: "info" };
+				this.applyActionResult(result, targetId);
 			},
 		});
 	}
