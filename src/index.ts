@@ -1,9 +1,15 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
+import { loadMultiProfilesConfig } from "./config.js";
 import { COMMAND_NAME, toErrorMessage } from "./errors.js";
 import { onResourcesDiscover, refreshModelRegistry } from "./pi-api-utils.js";
 
 export default function modelProfilesExtension(pi: ExtensionAPI): void {
+	const { config } = loadMultiProfilesConfig();
+	if (!config.enabled) {
+		return;
+	}
+
 	// Register handler to refresh model registry on /reload
 	// This works around the issue where AgentSession.reload() doesn't call ModelRegistry.refresh()
 	onResourcesDiscover(pi, (event, ctx): void => {
