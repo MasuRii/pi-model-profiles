@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-03
+
+### Added
+- Added an `enabled` master config toggle. ([630d6d2](https://github.com/MasuRii/pi-model-profiles/commit/630d6d25e89720eb7bd10dea65f6d1ca9a82087e))
+
+### Changed
+- Extracted shared record-utils to eliminate duplication. ([93f4d5c](https://github.com/MasuRii/pi-model-profiles/commit/93f4d5c93e5faf95690534766ee01187395af208))
+- Consolidated error handling and profile lookup logic. ([52ab1aa](https://github.com/MasuRii/pi-model-profiles/commit/52ab1aa49d6a25d0517776e12e3c62f627bc5ac8))
+- Generalized the modal scroll indicator and clipboard helpers. ([8da9200](https://github.com/MasuRii/pi-model-profiles/commit/8da9200b70c2a42522a1c33ab818698bb9286c0d))
+- Updated README with badges and a Ko-fi link. ([30e9752](https://github.com/MasuRii/pi-model-profiles/commit/30e9752dc4c0979410ec536047c860be9cbb125d))
+- Widened Pi peer dependency compatibility to include `^0.80.0` and added vulnerability overrides (`protobufjs`, `ws`). ([8fc17c5](https://github.com/MasuRii/pi-model-profiles/commit/8fc17c5d6f4c00a90c9dd750b5284a04caec393f))
+
 ## [0.3.4] - 2026-06-16
 
 ### Fixed
