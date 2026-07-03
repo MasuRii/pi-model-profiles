@@ -1,14 +1,20 @@
+<div align="center">
+
 # pi-model-profiles
 
-[![npm version](https://img.shields.io/npm/v/pi-model-profiles?style=flat-square)](https://www.npmjs.com/package/pi-model-profiles) [![License](https://img.shields.io/github/license/MasuRii/pi-model-profiles?style=flat-square)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/pi-model-profiles?style=for-the-badge)](https://www.npmjs.com/package/pi-model-profiles)
+[![License](https://img.shields.io/github/license/MasuRii/pi-model-profiles?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=for-the-badge)]()
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y01PSSVR)
 
 <img width="1389" height="768" alt="image" src="https://github.com/user-attachments/assets/7170fed2-018f-4719-a147-3bd7967456bc" />
-
 `pi-model-profiles` is a Pi extension for saving, updating, deleting, sorting, and applying whole-agent model frontmatter snapshots.
-
 - **Command:** `/model-profiles`
 - **npm:** https://www.npmjs.com/package/pi-model-profiles
 - **GitHub:** https://github.com/MasuRii/pi-model-profiles
+
+</div>
 
 ## Features
 
