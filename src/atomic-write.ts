@@ -20,8 +20,9 @@ export function writeFileAtomic(path: string, content: string): void {
 		if (!renamed) {
 			try {
 				unlinkSync(tempPath);
-			} catch {
-				// Ignore temp cleanup failures after a write error.
+			} catch (cleanupError) {
+				// Temp cleanup is best-effort; failures must never mask the original write error.
+				void cleanupError;
 			}
 		}
 	}

@@ -22,7 +22,7 @@ export interface MultiProfilesDebugLoggerOptions {
 
 function safeJsonStringify(value: unknown): string {
 	const seen = new WeakSet<object>();
-	return JSON.stringify(value, (_key, currentValue) => {
+	return JSON.stringify(value, (_key: string, currentValue: unknown) => {
 		if (currentValue instanceof Error) {
 			return {
 				name: currentValue.name,
@@ -370,8 +370,9 @@ export class MultiProfilesDebugLogger {
 					...payload,
 				})}\n`,
 			);
-		} catch {
+		} catch (logError) {
 			// Debug log failures must never affect extension functionality.
+			void logError;
 		}
 	}
 

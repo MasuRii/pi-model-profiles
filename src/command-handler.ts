@@ -19,11 +19,19 @@ import {
 } from "./profile-store.js";
 import { removeProfileAndUpdate } from "./profile-removal-service.js";
 import { openProfilesModal, type ProfileModalResult } from "./profile-modal.js";
-import type { AppliedProfileOutcome, ProfilesFile } from "./types.js";
+import type { AppliedProfileOutcome, ProfilesFile, SavedProfile } from "./types.js";
 
 function buildCurrentProfileName(activeAgentName: string | null, data: ProfilesFile): string {
 	const baseName = activeAgentName ? `${activeAgentName} ${PROFILE_NAME_SUFFIX}` : INITIAL_PROFILE_NAME;
 	return resolveUniqueProfileName(baseName, data.profiles);
+}
+
+function requireSavedProfile(data: ProfilesFile, profileId: string): SavedProfile {
+	const profile = findProfileById(data, profileId);
+	if (!profile) {
+		throw new Error(`Saved profile '${profileId}' was not found.`);
+	}
+	return profile;
 }
 
 function notifyWarnings(ctx: ExtensionCommandContext, warnings: readonly string[]): void {
@@ -88,10 +96,7 @@ export async function handleModelProfilesCommand(ctx: ExtensionCommandContext): 
 			};
 		},
 		applyProfile: async (profileId) => {
-			const profile = findProfileById(data, profileId);
-			if (!profile) {
-				throw new Error(`Saved profile '${profileId}' was not found.`);
-			}
+			const profile = requireSavedProfile(data, profileId);
 			const applied = applySavedProfile(profile, agentOptions);
 			notifyWarnings(ctx, applied.warnings);
 			return {
@@ -100,10 +105,7 @@ export async function handleModelProfilesCommand(ctx: ExtensionCommandContext): 
 			};
 		},
 		removeProfile: async (profileId) => {
-			const profile = findProfileById(data, profileId);
-			if (!profile) {
-				throw new Error(`Saved profile '${profileId}' was not found.`);
-			}
+			const profile = requireSavedProfile(data, profileId);
 			const removal = removeProfileAndUpdate(data, profileId);
 			data = removal.data;
 			saveProfilesFile(data, PROFILE_STORE_PATH);
@@ -114,10 +116,7 @@ export async function handleModelProfilesCommand(ctx: ExtensionCommandContext): 
 			};
 		},
 		updateProfile: async (profileId) => {
-			const profile = findProfileById(data, profileId);
-			if (!profile) {
-				throw new Error(`Saved profile '${profileId}' was not found.`);
-			}
+			const profile = requireSavedProfile(data, profileId);
 			const update = updateProfileAndReturn(data, profileId, agentOptions);
 			notifyWarnings(ctx, update.result.warnings);
 			data = update.data;
